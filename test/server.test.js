@@ -19,6 +19,18 @@ async function serve(t, options) {
 const payload = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: 'https://youtu.be/abcdefghijk' }) };
 
 // These reproduce the review's process lifecycle failures without network downloads.
+test('failed downloader reports its actual error without exposing media URLs', async () => {
+  const proc = child();
+  const result = runYtdlp([], { timeoutMs: 1000, spawnProcess: () => proc });
+  proc.stderr.write('WARNING: preliminary warning\nERROR: Sign in to confirm you are not a bot. https://example.com/private?token=secret\n');
+  proc.emit('close', 1);
+  await assert.rejects(result, error => {
+    assert.match(error.message, /Sign in to confirm/);
+    assert.doesNotMatch(error.message, /token=secret/);
+    return true;
+  });
+});
+
 test('spawn error followed by close rejects once without crashing', async () => {
   const proc = child();
   const result = runYtdlp([], { timeoutMs: 1000, spawnProcess: () => proc });

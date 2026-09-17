@@ -59,6 +59,7 @@ function runYtdlp(args, { signal, timeoutMs, onLine, capture = false, spawnProce
     let settled = false;
     let failure;
     let output = '';
+    let stderr = '';
     const decoder = new StringDecoder('utf8');
     let pending = '';
     const finish = (error) => {
@@ -95,14 +96,16 @@ function runYtdlp(args, { signal, timeoutMs, onLine, capture = false, spawnProce
       }
     });
     // Drain both pipes so verbose output cannot block the downloader.
-    child.stderr.on('data', () => {});
+    child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString('utf8')).slice(-16384); });
     child.once('error', () => finish(new Error('yt-dlp is not installed or failed to start.')));
     child.once('close', (code) => {
       if (settled) return;
       const tail = decoder.end();
       if (capture) output += tail;
       if (onLine && (pending || tail)) onLine((pending + tail).trim());
-      finish(failure || (code !== 0 ? new Error('Download failed. The video may be unavailable or restricted. Check that yt-dlp and ffmpeg are installed.') : null));
+      const detail = stderr.replace(/\u001b\[[0-9;]*m/g, '').split(/\r?\n/).filter(line => /^ERROR:/i.test(line)).pop();
+      const safeDetail = detail?.replace(/https?:\/\/\S+/g, '[URL]').slice(0, 1000);
+      finish(failure || (code !== 0 ? new Error(safeDetail || `The downloader exited with code ${code ?? 'unknown'}. Please try again.`) : null));
     });
   });
 }
