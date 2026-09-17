@@ -21,6 +21,29 @@ Cancel download or close the page to stop active work. Metadata checks time out 
 
 ## Vercel deployment
 
+### Render backend with Vercel frontend
+
+1. Create a Render account and connect this GitHub repository. Create a new
+   Blueprint from the repository; `render.yaml` defines one **Free** Docker web
+   service. No API key or database is required.
+2. Wait for the Docker build and `/api/health` check to pass. The image installs
+   verified Linux tools and runs the app as a non-root user.
+3. Share the generated `https://…onrender.com` service URL. Test the actual video
+   on that backend before changing the frontend. Cloud IPs can still receive
+   YouTube bot checks; a healthy binary check does not prove YouTube access.
+4. Set `backendUrl` in `public/backend-config.js` to the tested Render origin.
+   The browser then calls Render directly for metadata, conversion, and MP3
+   transfer. Keep `ALLOWED_ORIGINS` on Render set to the Vercel frontend origin
+   (comma-separated for additional domains).
+
+Render Free sleeps when idle and loses temporary files on restart. The first
+request may take around a minute. The blueprint permits one active job, videos
+up to 20 minutes, and three pending downloads. These are small-group testing
+limits, not a guarantee of capacity for a public service. CORS controls browser
+origins; it is not authentication. Downloads have one-use random tokens.
+
+### Existing Vercel-only setup
+
 Import the repository root with the Express framework preset. `vercel.json` runs
 `npm run build:vercel` to download pinned, SHA-256-verified Linux yt-dlp, ffmpeg,
 and ffprobe releases into `vendor/bin/`, marks them executable, and includes them

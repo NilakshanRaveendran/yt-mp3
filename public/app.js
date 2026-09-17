@@ -13,6 +13,8 @@ const cancelDownload = document.getElementById('cancelDownload');
 let busy = false;
 let controller;
 let confirmChoice;
+const backendUrl = (window.APP_CONFIG?.backendUrl || '').replace(/\/$/, '');
+const apiUrl = path => backendUrl + path;
 
 function setStatus(className, text) {
   status.className = className;
@@ -84,7 +86,8 @@ async function saveFile(file, signal) {
   setStatus('', 'Receiving MP3 file…');
   progress.removeAttribute('value');
   progressDetail.textContent = '';
-  const response = await fetch(file.url, { signal });
+  if (!/^\/api\/files\/[a-zA-Z0-9_-]+$/.test(file.url)) throw new Error('Invalid download link received.');
+  const response = await fetch(apiUrl(file.url), { signal });
   if (!response.ok) throw new Error('Could not receive the MP3 file. Please try again.');
   const total = Number(response.headers.get('Content-Length')) || null;
   const reader = response.body.getReader();
@@ -131,13 +134,13 @@ async function startFlow() {
   cancelDownload.hidden = false;
   progress.removeAttribute('value');
   progressDetail.textContent = '';
-  setStatus('', 'Checking video…');
+  setStatus('', backendUrl ? 'Connecting and checking video… The server may take a minute to wake up.' : 'Checking video…');
   try {
-    const infoResponse = await fetch('/api/info', {
+    const infoResponse = await fetch(apiUrl('/api/info'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }), signal,
     });
-    const info = await infoResponse.json();
+    const info = await infoResponse.json().catch(() => { throw new Error('The server is waking up or unavailable. Please try again in a minute.'); });
     if (!infoResponse.ok) throw new Error(info.error || 'Could not check this video.');
     signal.throwIfAborted();
     if (info.duration > 20 * 60) {
@@ -153,7 +156,7 @@ async function startFlow() {
       if (!accepted) { setStatus('', 'Cancelled.'); return; }
       activity.hidden = false;
     }
-    const response = await fetch('/api/download', {
+    const response = await fetch(apiUrl('/api/download'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, quality }), signal,
     });

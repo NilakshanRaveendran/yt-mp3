@@ -18,6 +18,38 @@ async function serve(t, options) {
 }
 const payload = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: 'https://youtu.be/abcdefghijk' }) };
 
+test('CORS allows the configured frontend and rejects other origins', async t => {
+  const base = await serve(t, { allowedOrigins: ['https://frontend.example'] });
+  const allowed = await fetch(base + '/api/info', { method: 'OPTIONS', headers: { Origin: 'https://frontend.example', 'Access-Control-Request-Method': 'POST' } });
+  assert.equal(allowed.status, 204);
+  assert.equal(allowed.headers.get('Access-Control-Allow-Origin'), 'https://frontend.example');
+  const rejected = await fetch(base + '/api/info', { ...payload, headers: { ...payload.headers, Origin: 'https://other.example' } });
+  assert.equal(rejected.status, 403);
+});
+
+test('capacity rejects concurrent work and releases the slot on completion', async t => {
+  let started;
+  const begun = new Promise(resolve => { started = resolve; });
+  let release;
+  const base = await serve(t, { maxConcurrentJobs: 1, run: async () => { started(); await new Promise(resolve => { release = resolve; }); return '{"duration":10}'; } });
+  const first = fetch(base + '/api/info', payload);
+  await begun;
+  const busy = await fetch(base + '/api/info', payload);
+  assert.equal(busy.status, 429);
+  release();
+  assert.equal((await first).status, 200);
+  const next = fetch(base + '/api/info', payload);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  release();
+  assert.equal((await next).status, 200);
+});
+
+test('hosted duration limit rejects long videos before conversion', async t => {
+  const base = await serve(t, { maxVideoSeconds: 1200, run: async () => '{"duration":1201}' });
+  const response = await fetch(base + '/api/info', payload);
+  assert.match((await response.json()).error, /up to 20 minutes/);
+});
+
 // These reproduce the review's process lifecycle failures without network downloads.
 test('failed downloader reports its actual error without exposing media URLs', async () => {
   const proc = child();

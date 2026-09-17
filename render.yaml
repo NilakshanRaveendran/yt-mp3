@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: yt-mp3-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://yt-mp3-delta.vercel.app
+      - key: MAX_CONCURRENT_JOBS
+        value: "1"
+      - key: MAX_VIDEO_SECONDS
+        value: "1200"
+      - key: MAX_PENDING_FILES
+        value: "3"

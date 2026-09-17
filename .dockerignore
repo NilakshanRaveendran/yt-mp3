@@ -1,0 +1,11 @@
+.git
+.vercel
+.claude
+node_modules
+vendor
+.env*
+downloads
+tmp
+test
+*.log
+*.mp3

@@ -190,10 +190,29 @@ function watchConversionProgress(filename, duration, onProgress) {
   };
 }
 
-function createApp({ run = runYtdlp, infoTimeoutMs = INFO_TIMEOUT_MS, fileTtlMs = FILE_TTL_MS } = {}) {
+function createApp({ run = runYtdlp, infoTimeoutMs = INFO_TIMEOUT_MS, fileTtlMs = FILE_TTL_MS,
+  allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean),
+  maxConcurrentJobs = Number(process.env.MAX_CONCURRENT_JOBS || 4),
+  maxVideoSeconds = Number(process.env.MAX_VIDEO_SECONDS || 0),
+  maxPendingFiles = Number(process.env.MAX_PENDING_FILES || 10),
+} = {}) {
   const app = express();
   const files = new Map();
-  app.use(express.json());
+  let activeJobs = 0;
+  app.use('/api', (req, res, next) => {
+    const origin = req.get('Origin');
+    if (origin && allowedOrigins.length) {
+      if (!allowedOrigins.includes(origin)) return res.status(403).json({ error: 'This website is not allowed to use the backend.' });
+      res.set('Access-Control-Allow-Origin', origin);
+      res.vary('Origin');
+      res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.set('Access-Control-Allow-Headers', 'Content-Type');
+      res.set('Access-Control-Expose-Headers', 'Content-Length');
+    }
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+  app.use(express.json({ limit: '4kb' }));
   app.use(express.static(path.join(__dirname, 'public')));
 
   let binaryHealth;
@@ -227,12 +246,24 @@ function createApp({ run = runYtdlp, infoTimeoutMs = INFO_TIMEOUT_MS, fileTtlMs 
     if (info.is_live || info.live_status === 'is_live') {
       throw new Error('This is an ongoing live stream and cannot be downloaded until it ends.');
     }
+    if (maxVideoSeconds && (!Number.isFinite(info.duration) || info.duration > maxVideoSeconds)) {
+      throw new Error(`This server supports videos up to ${Math.floor(maxVideoSeconds / 60)} minutes with a known duration.`);
+    }
     return info;
+  };
+  const reserveJob = res => {
+    if (activeJobs >= maxConcurrentJobs) {
+      res.set('Retry-After', '15').status(429).json({ error: 'The server is busy with another video. Please try again shortly.' });
+      return false;
+    }
+    activeJobs++;
+    return true;
   };
 
   app.post('/api/info', async (req, res) => {
     const url = validUrl(req, res);
     if (!url) return;
+    if (!reserveJob(res)) return;
     const lifecycle = requestSignal(res);
     try {
       const info = await getVideoInfo(url, lifecycle.signal);
@@ -240,6 +271,7 @@ function createApp({ run = runYtdlp, infoTimeoutMs = INFO_TIMEOUT_MS, fileTtlMs 
     } catch (err) {
       if (!lifecycle.signal.aborted && !res.headersSent) res.status(500).json({ error: err.message });
     } finally {
+      activeJobs--;
       lifecycle.dispose();
     }
   });
@@ -252,6 +284,8 @@ function createApp({ run = runYtdlp, infoTimeoutMs = INFO_TIMEOUT_MS, fileTtlMs 
       return res.status(400).json({ error: 'Please choose a valid MP3 quality option.' });
     }
     const profile = MP3_PROFILES[quality];
+    if (files.size >= maxPendingFiles) return res.status(503).json({ error: 'Download storage is busy. Please try again in a few minutes.' });
+    if (!reserveJob(res)) return;
     const lifecycle = requestSignal(res);
     res.set({ 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
     res.flushHeaders();
@@ -314,6 +348,7 @@ function createApp({ run = runYtdlp, infoTimeoutMs = INFO_TIMEOUT_MS, fileTtlMs 
     } catch (err) {
       if (!lifecycle.signal.aborted) send({ type: 'error', message: err.message });
     } finally {
+      activeJobs--;
       clearInterval(heartbeat);
       lifecycle.dispose();
       if (outDir) await cleanup(outDir);

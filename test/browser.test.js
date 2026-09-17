@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../public/app.js'), 'utf8');
 
-function browser(fetch) {
+function browser(fetch, backendUrl = '') {
   const elements = {};
   for (const id of ['url', 'quality', 'go', 'status', 'confirmBox', 'confirmText', 'confirmYes', 'confirmNo', 'activity', 'progress', 'progressDetail', 'cancelDownload']) {
     elements[id] = { value: 'https://youtu.be/abcdefghijk', style: {}, listeners: {}, removeAttribute(name) { delete this[name]; }, addEventListener(event, fn) { this.listeners[event] = fn; } };
@@ -13,13 +13,26 @@ function browser(fetch) {
   const links = [];
   const context = vm.createContext({ fetch, AbortController, TextDecoder, Blob,
     URL: { createObjectURL: () => 'blob:test', revokeObjectURL() {} }, setTimeout() {},
-    window: { addEventListener() {} },
+    window: { APP_CONFIG: { backendUrl }, addEventListener() {} },
     document: { getElementById: id => elements[id], body: { appendChild() {} }, createElement() { const link = { click() { links.push(this); }, remove() {} }; return link; } },
   });
   vm.runInContext(source, context);
   return { elements, links, start: () => vm.runInContext('startFlow()', context) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
+
+test('external backend receives metadata, conversion and file requests', async () => {
+  const requests = [];
+  const ui = browser(async url => {
+    requests.push(url);
+    if (url.endsWith('/api/info')) return Response.json({ duration: 10 });
+    if (url.endsWith('/api/download')) return new Response('{"type":"ready","filename":"test.mp3","url":"/api/files/token"}\n');
+    return new Response('mp3');
+  }, 'https://backend.example/');
+  await ui.start();
+  assert.deepEqual(requests, ['https://backend.example/api/info', 'https://backend.example/api/download', 'https://backend.example/api/files/token']);
+  assert.equal(ui.links.length, 1);
+});
 
 test('repeated Enter cannot submit duplicate requests', async () => {
   let requests = 0;
