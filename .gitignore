@@ -1,0 +1,27 @@
+# Installed dependencies (keep package-lock.json tracked)
+node_modules/
+
+# Local environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and test output
+*.log
+coverage/
+.nyc_output/
+
+# Temporary files and downloaded audio
+tmp/
+temp/
+downloads/
+*.mp3
+*.part
+*.ytdl
+
+# macOS and local editor/assistant settings
+.DS_Store
+._*
+.idea/
+.vscode/
+.claude/settings.local.json
