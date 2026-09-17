@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "build:vercel": "node scripts/install-binaries.js",
     "start": "node server.js",
     "test": "node --test"
   },

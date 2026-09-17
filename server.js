@@ -5,6 +5,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
+const { binaryConfig, checkBinaries } = require('./lib/binaries');
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be']);
 const INFO_TIMEOUT_MS = 60 * 1000;
@@ -50,7 +51,9 @@ function stopProcessTree(child) {
 function runYtdlp(args, { signal, timeoutMs, onLine, capture = false, spawnProcess = spawn, killTree = stopProcessTree }) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('Cancelled.'));
-    const child = spawnProcess('yt-dlp', args, {
+    const binaries = binaryConfig();
+    const binaryArgs = binaries.ffmpegDirectory ? ['--ffmpeg-location', binaries.ffmpegDirectory, '--js-runtimes', `node:${process.execPath}`, ...args] : args;
+    const child = spawnProcess(binaries.ytdlp, binaryArgs, {
       detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
     });
     let settled = false;
@@ -189,6 +192,15 @@ function createApp({ run = runYtdlp, infoTimeoutMs = INFO_TIMEOUT_MS, fileTtlMs 
   const files = new Map();
   app.use(express.json());
   app.use(express.static(path.join(__dirname, 'public')));
+
+  let binaryHealth;
+  app.get('/api/health', async (req, res) => {
+    binaryHealth ||= checkBinaries();
+    const binaries = await binaryHealth;
+    const ok = Object.values(binaries).every(binary => binary.ok);
+    res.set('Cache-Control', 'no-store').status(ok ? 200 : 503).json({ ok, binaries });
+    if (!ok) binaryHealth = null;
+  });
 
   const cleanup = (dir) => fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
   const requestSignal = (res) => {

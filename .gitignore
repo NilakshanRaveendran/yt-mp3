@@ -1,5 +1,7 @@
 # Installed dependencies (keep package-lock.json tracked)
 node_modules/
+vendor/bin/
+.vercel/
 
 # Local environment variables and secrets
 .env
