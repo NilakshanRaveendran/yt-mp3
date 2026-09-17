@@ -319,9 +319,13 @@ function createApp({ run = runYtdlp, infoTimeoutMs = INFO_TIMEOUT_MS, fileTtlMs 
   return app;
 }
 
+const app = createApp();
+
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  createApp().listen(PORT, () => console.log(`YT to MP3 running at http://localhost:${PORT}`));
+  app.listen(PORT, () => console.log(`YT to MP3 running at http://localhost:${PORT}`));
 }
 
-module.exports = { createApp, runYtdlp, parseProgress, isValidYoutubeUrl, stopProcessTree, conversionProgress };
+// Vercel imports the request handler without starting a local HTTP listener.
+module.exports = app;
+Object.assign(module.exports, { createApp, runYtdlp, parseProgress, isValidYoutubeUrl, stopProcessTree, conversionProgress });
